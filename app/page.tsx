@@ -45,12 +45,13 @@ export default function Home(){
     const {data:{user},error:authError}=await s.auth.getUser();
     if(authError)throw new Error("验证登录状态失败："+authError.message);
     if(!user)throw new Error("登录状态已失效，请重新登录。");
-    const controller=new AbortController();
-    const timeoutId=window.setTimeout(()=>controller.abort(),20000);
+    let timeoutId:ReturnType<typeof setTimeout>|undefined;
     let result;
     try{
-     result=await s.from("care_records").insert({household_id:householdId,baby_id:babyId,created_by:user.id,category:categoryFor(k),detail:d,occurred_at:new Date().toISOString()}).select("id,category,detail,occurred_at").single().abortSignal(controller.signal);
-    }finally{window.clearTimeout(timeoutId);}
+     const saveRequest=s.from("care_records").insert({household_id:householdId,baby_id:babyId,created_by:user.id,category:categoryFor(k),detail:d,occurred_at:new Date().toISOString()}).select("id,category,detail,occurred_at").single();
+     const timeoutRequest=new Promise<never>((_,reject)=>{timeoutId=setTimeout(()=>reject(new Error("请求超过 20 秒仍未返回，请检查网络或 Supabase 服务状态。")),20000);});
+     result=await Promise.race([saveRequest,timeoutRequest]);
+    }finally{if(timeoutId)clearTimeout(timeoutId);}
     if(result.error)throw new Error(result.error.message);
     if(!result.data)throw new Error("数据库没有返回保存结果，请刷新记录列表确认是否写入。");
     setRecords(p=>[{id:result.data.id,kind:k,detail:result.data.detail,time:result.data.occurred_at},...p]);
