@@ -32,7 +32,7 @@ export default function Home(){
  }
  init();return()=>{alive=false;};
  },[router]);
- useEffect(()=>{if(!cloud){try{localStorage.setItem("babycare-records",JSON.stringify(records));}catch{}}},[records,cloud]);
+ useEffect(()=>{if(!cloud&&!loading){try{localStorage.setItem("babycare-records",JSON.stringify(records));}catch{}}},[records,cloud]);
  const today=useMemo(()=>records.filter(r=>new Date(r.time).toDateString()===new Date().toDateString()),[records]);
  async function add(k:string,d:string){setSaving(true);setNotice("");const s=createClient();if(cloud&&s){const {data:{user}}=await s.auth.getUser();const {data,error}=await s.from("care_records").insert({household_id:householdId,baby_id:babyId,created_by:user?.id,category:categoryFor(k),detail:d,occurred_at:new Date().toISOString()}).select("id,category,detail,occurred_at").single();if(error){setNotice("保存失败："+error.message);setSaving(false);return;}setRecords(p=>[{id:data.id,kind:k,detail:data.detail,time:data.occurred_at},...p]);}else{setRecords(p=>[{id:crypto.randomUUID(),kind:k,detail:d,time:new Date().toISOString()},...p]);}
  setSaving(false);setShow(false);setDetail("");setTab("记录");}
