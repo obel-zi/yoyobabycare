@@ -34,8 +34,35 @@ export default function Home(){
  },[router]);
  useEffect(()=>{if(!cloud&&!loading){try{localStorage.setItem("babycare-records",JSON.stringify(records));}catch{}}},[records,cloud]);
  const today=useMemo(()=>records.filter(r=>new Date(r.time).toDateString()===new Date().toDateString()),[records]);
- async function add(k:string,d:string){setSaving(true);setNotice("");const s=createClient();if(cloud&&s){const {data:{user}}=await s.auth.getUser();const {data,error}=await s.from("care_records").insert({household_id:householdId,baby_id:babyId,created_by:user?.id,category:categoryFor(k),detail:d,occurred_at:new Date().toISOString()}).select("id,category,detail,occurred_at").single();if(error){setNotice("保存失败："+error.message);setSaving(false);return;}setRecords(p=>[{id:data.id,kind:k,detail:data.detail,time:data.occurred_at},...p]);}else{setRecords(p=>[{id:crypto.randomUUID(),kind:k,detail:d,time:new Date().toISOString()},...p]);}
- setSaving(false);setShow(false);setDetail("");setTab("记录");}
+ async function add(k:string,d:string){
+  if(saving)return;
+  setSaving(true);setNotice("");
+  try{
+   const s=createClient();
+   if(cloud){
+    if(!s)throw new Error("Supabase 客户端未初始化，请刷新页面后重试。");
+    if(!householdId||!babyId)throw new Error("家庭或宝宝档案尚未加载完成，请刷新页面后重试。");
+    const {data:{user},error:authError}=await s.auth.getUser();
+    if(authError)throw new Error("验证登录状态失败："+authError.message);
+    if(!user)throw new Error("登录状态已失效，请重新登录。");
+    const controller=new AbortController();
+    const timeoutId=window.setTimeout(()=>controller.abort(),20000);
+    let result;
+    try{
+     result=await s.from("care_records").insert({household_id:householdId,baby_id:babyId,created_by:user.id,category:categoryFor(k),detail:d,occurred_at:new Date().toISOString()}).select("id,category,detail,occurred_at").single().abortSignal(controller.signal);
+    }finally{window.clearTimeout(timeoutId);}
+    if(result.error)throw new Error(result.error.message);
+    if(!result.data)throw new Error("数据库没有返回保存结果，请刷新记录列表确认是否写入。");
+    setRecords(p=>[{id:result.data.id,kind:k,detail:result.data.detail,time:result.data.occurred_at},...p]);
+   }else{
+    setRecords(p=>[{id:crypto.randomUUID(),kind:k,detail:d,time:new Date().toISOString()},...p]);
+   }
+   setShow(false);setDetail("");setTab("记录");
+  }catch(error){
+   const message=error instanceof Error?error.message:String(error);
+   setNotice("保存失败："+message+(message.toLowerCase().includes("abort")?"（请求超过 20 秒，已停止等待）":""));
+  }finally{setSaving(false);}
+ }
  async function signOut(){const s=createClient();if(s)await s.auth.signOut();window.location.href="/";}
  return <main className="shell"><header className="top"><div><div className="brand">🌱 BabyCare</div><div className="muted" style={{fontSize:13}}>让每一份照护，都有迹可循</div></div><div style={{display:"flex",gap:8,alignItems:"center"}}><button className="secondary" onClick={()=>setTab("家庭")}><Users size={16}/> 家庭</button>{userEmail?<button className="secondary" onClick={signOut} title="退出登录"><LogOut size={16}/></button>:<button className="secondary" onClick={()=>router.push("/login")}>登录 / 注册</button>}</div></header>
  <div className="notice" style={{display:"flex",alignItems:"center",gap:8}}>{cloud?<><Cloud size={16}/> 云端已连接 · {userEmail}</>:<><HardDrive size={16}/> 本机模式 · 登录后可使用家庭云端空间</>}</div>
